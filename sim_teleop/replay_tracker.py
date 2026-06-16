@@ -25,6 +25,10 @@ EE_BOUNDS_MIN = np.array([-0.4, -0.4, 0.05])
 EE_BOUNDS_MAX = np.array([0.4, 0.4, 0.5])
 EE_WORKSPACE_CENTER = np.array([0.0, 0.0, 0.275])
 MAX_EE_STEP_M = 0.03
+INITIAL_Q_PRESETS = {
+    "zero": np.zeros(N_ARM),
+    "ready": np.array([0.0, 1.0, 1.0, 0.0, 0.5, 0.0]),
+}
 
 
 @dataclass
@@ -69,6 +73,15 @@ def _joint6_axis(choice: str) -> np.ndarray | None:
     raise ValueError(f"Unsupported joint6 axis choice: {choice}")
 
 
+def _parse_initial_q(text: str | None, preset: str) -> np.ndarray:
+    if text is None:
+        return INITIAL_Q_PRESETS[preset].copy()
+    values = [float(item.strip()) for item in text.split(",") if item.strip()]
+    if len(values) != N_ARM:
+        raise ValueError(f"--initial-q expects {N_ARM} comma-separated values.")
+    return np.asarray(values, dtype=float)
+
+
 def _rotation_error_deg(target: np.ndarray, realized: np.ndarray) -> float:
     delta = target[:3, :3].T @ realized[:3, :3]
     cos_angle = np.clip((np.trace(delta) - 1.0) * 0.5, -1.0, 1.0)
@@ -101,6 +114,7 @@ def _compute_targets(
     bundle: RobotBundle,
     timestamps: np.ndarray,
     tracker_poses: np.ndarray,
+    initial_q: np.ndarray,
     *,
     stride: int,
     max_frames: int | None,
@@ -111,8 +125,7 @@ def _compute_targets(
         timestamps = timestamps[:max_frames]
         tracker_poses = tracker_poses[:max_frames]
 
-    q0 = bundle.sim_robot.get_joint_pos()[:N_ARM].copy()
-    control_init = bundle.kin.fk(q0, bundle.control_site)
+    control_init = bundle.kin.fk(initial_q, bundle.control_site)
     tracker_init_inv = np.linalg.inv(tracker_poses[0])
 
     targets = []
@@ -170,13 +183,14 @@ def _precompute(
     bundle: RobotBundle,
     timestamps: np.ndarray,
     targets: np.ndarray,
+    initial_q: np.ndarray,
     *,
     position_cost: float,
     orientation_cost: float,
     posture_cost: float,
     max_iters: int,
 ) -> ReplayResult:
-    q_prev = bundle.sim_robot.get_joint_pos()[:N_ARM].copy()
+    q_prev = initial_q.copy()
     qpos: list[np.ndarray] = []
     realized: list[np.ndarray] = []
     ik_ok: list[bool] = []
@@ -265,6 +279,7 @@ def _precompute_windowed(
     bundle: RobotBundle,
     timestamps: np.ndarray,
     targets: np.ndarray,
+    initial_q: np.ndarray,
     *,
     action_frames: int,
     exec_frames: int,
@@ -280,7 +295,7 @@ def _precompute_windowed(
     if exec_frames <= 0:
         raise ValueError("--exec-frames must be positive.")
 
-    q_home = bundle.sim_robot.get_joint_pos()[:N_ARM].copy()
+    q_home = initial_q.copy()
     q_prev = q_home.copy()
     q_prev2: np.ndarray | None = None
     lower, upper = _joint_bounds(bundle.xml_path)
@@ -553,6 +568,17 @@ def main() -> None:
         default="positive",
         help="MuJoCo joint6 axis override. Defaults to the validated positive axis.",
     )
+    parser.add_argument(
+        "--initial-pose",
+        choices=sorted(INITIAL_Q_PRESETS),
+        default="ready",
+        help="Named initial arm configuration used as the replay anchor.",
+    )
+    parser.add_argument(
+        "--initial-q",
+        default=None,
+        help="Comma-separated six-joint initial q override, e.g. 0,1,1,0,0.5,0.",
+    )
     parser.add_argument("--position-cost", type=float, default=1.0)
     parser.add_argument("--orientation-cost", type=float, default=1.0)
     parser.add_argument("--posture-cost", type=float, default=0.001)
@@ -615,9 +641,16 @@ def main() -> None:
         control_site=args.control_site,
         joint6_axis=_joint6_axis(args.joint6_axis),
     )
+    initial_q = _parse_initial_q(args.initial_q, args.initial_pose)
+    initial_pose = bundle.kin.fk(initial_q, args.control_site)
     print(
         f"[REPLAY] model={bundle.xml_path} control_site={args.control_site} "
         f"joint6_axis={args.joint6_axis}",
+        flush=True,
+    )
+    print(
+        f"[REPLAY] initial_q={np.round(initial_q, 4)} "
+        f"{args.control_site}_pos={np.round(initial_pose[:3, 3], 4)}",
         flush=True,
     )
 
@@ -625,6 +658,7 @@ def main() -> None:
         bundle,
         timestamps,
         tracker_poses,
+        initial_q,
         stride=args.stride,
         max_frames=args.max_frames,
     )
@@ -660,6 +694,7 @@ def main() -> None:
             bundle,
             replay_timestamps,
             targets,
+            initial_q,
             action_frames=args.action_frames,
             exec_frames=args.exec_frames,
             position_weight=args.position_cost,
@@ -674,6 +709,7 @@ def main() -> None:
             bundle,
             replay_timestamps,
             targets,
+            initial_q,
             position_cost=args.position_cost,
             orientation_cost=args.orientation_cost,
             posture_cost=args.posture_cost,
