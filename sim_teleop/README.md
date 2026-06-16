@@ -15,6 +15,8 @@ Clean YAM teleoperation package extracted from the older HuMI
 6. Save tracker-first YAM teleop episodes with `--record-dir`.
 7. Record raw Vive Tracker trajectories without MuJoCo via
    `python -m sim_teleop.record_tracker`.
+8. Stream raw Vive Tracker poses over ZMQ to a LAN receiver (e.g. Ubuntu)
+   via `python -m sim_teleop.stream_pose` — see Live Pose Streaming below.
 
 It does not yet implement MuJoCo replay.
 
@@ -161,6 +163,7 @@ Important dependencies:
 
 ```text
 openvr
+pyzmq
 mujoco
 numpy
 mink
@@ -181,6 +184,104 @@ third_party/HuMI-main/humi_data_collection/packages/htc_interface/yam_ik_control
 
 `sim_teleop.robot` resolves those paths automatically for the current repo
 layout and for the old `packages/htc_interface` layout.
+
+## Live Pose Streaming (Windows → Ubuntu)
+
+Stream live Vive Tracker poses from the Windows machine (SteamVR) to another
+machine on the LAN (e.g. Ubuntu) over ZeroMQ. The receiver needs no SteamVR
+install and can drive IK, logging, or teleop with the live pose.
+
+```text
+Windows (SteamVR + tracker)                Ubuntu (LAN)
+┌────────────────────────────┐           ┌─────────────────────────┐
+│ stream_pose.py             │   ZMQ     │ receive_pose.py         │
+│  openvr → 4x4 pose         │ ────────► │  zmq.SUB connect        │
+│  zmq.PUB bind tcp://*:1234 │   LAN     │   tcp://<WIN_IP>:1234   │
+└────────────────────────────┘           └─────────────────────────┘
+```
+
+Each frame is JSON, matching `record_tracker` on-disk schema:
+
+```json
+{
+  "timestamp": 1780000000.123,
+  "trackers": [
+    {"serial": "3B-A33M...", "tracker_pose": [[...4x4...]]}
+  ]
+}
+```
+
+`tracker_pose` is a 4x4 homogeneous matrix in the SteamVR
+`TrackingUniverseStanding` frame (raw, no robot-frame transform). The sender
+reuses `sim_teleop.tracker.read_tracker_poses`, so streamed poses are directly
+comparable to recorded ones.
+
+### Windows side (sender)
+
+```powershell
+& ".venv\Scripts\python.exe" -m sim_teleop.stream_pose --port 1234
+```
+
+Options:
+
+```text
+--port PORT          ZMQ publisher port (default 1234)
+--host HOST          bind interface; '*' = all / LAN (default '*')
+--frequency HZ       publish rate (default 120)
+--serial-prefix PFX  only stream trackers whose serial starts with PFX
+                     (default TRACKER_SERIAL_PREFIX from tracker.py)
+```
+
+Find the Windows LAN IP with `ipconfig` (e.g. `192.168.1.10`).
+
+### Ubuntu side (receiver)
+
+Install the single dependency (no openvr/SteamVR needed):
+
+```bash
+pip install pyzmq
+```
+
+Run from the repo root. The receiver has no `sim_teleop` imports, so it also
+works as a standalone file:
+
+```bash
+python -m sim_teleop.receive_pose --host 192.168.1.10 --port 1234
+# or directly without the package:
+python sim_teleop/receive_pose.py --host 192.168.1.10 --port 1234
+```
+
+Options:
+
+```text
+--host WIN_IP   IP of the Windows sender (default 127.0.0.1)
+--port PORT     port the sender binds (default 1234)
+--print-rate N  print one frame every N seconds; 0 = every frame (default 0.5)
+```
+
+Use the pose in your own code by polling the newest frame:
+
+```python
+import zmq, numpy as np
+sock = zmq.Context().socket(zmq.SUB)
+sock.setsockopt(zmq.CONFLATE, 1); sock.setsockopt(zmq.RCVHWM, 1)
+sock.setsockopt_string(zmq.SUBSCRIBE, "")
+sock.connect("tcp://192.168.1.10:1234")
+msg = sock.recv_json()
+pose = np.array(msg["trackers"][0]["tracker_pose"])  # 4x4
+pos, rot = pose[:3, 3], pose[:3, :3]
+```
+
+### Streaming Checklist
+
+1. Both machines on the same subnet; `ping <WIN_IP>` works from Ubuntu.
+2. Allow the publisher port through the Windows firewall. On the first-run
+   popup check "Private network", or open TCP 1234 manually. This is the most
+   common reason Ubuntu sees no data.
+3. SteamVR detects the tracker before starting `stream_pose`.
+4. PUB/SUB drops the first few frames after a subscriber connects ("slow
+   joiner"). The receiver keeps only the newest frame via `CONFLATE`, so this
+   is fine for real-time use.
 
 ## Relation To Old HuMI Code
 
@@ -270,6 +371,7 @@ Replay:
 & ".venv\Scripts\python.exe" -m sim_teleop.replay_tracker data/tracker_poses
 & ".venv\Scripts\python.exe" -m sim_teleop.replay_tracker data/tracker_poses --hide-mesh --loop
 & ".venv\Scripts\python.exe" -m sim_teleop.replay_tracker data/tracker_poses --precompute-only
+& ".venv\Scripts\python.exe" -m sim_teleop.replay_tracker data/tracker_poses --ik-mode window --initial-pose ready --stride 2 --action-frames 12 --exec-frames 4 --hide-mesh
 ```
 
 Replay defaults to the validated setup:
@@ -278,6 +380,7 @@ Replay defaults to the validated setup:
 control_site = ee_site
 joint6_axis  = positive
 IK           = mink
+initial_pose = ready
 ```
 
 The MuJoCo replay viewer uses yellow for the target control pose, cyan for the
