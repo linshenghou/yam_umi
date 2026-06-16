@@ -1,0 +1,304 @@
+{
+  "schema": "yam_model_assets_v1",
+  "generated_at": "2026-06-16T13:00:03",
+  "model": "yam_linear_4310_tracker",
+  "arm": "yam",
+  "gripper": "linear_4310",
+  "authoritative_replay_asset": "yam_linear_4310_tracker.xml",
+  "kinematic_reference_urdf": "yam_linear_4310_tracker.frames.urdf",
+  "sites": {
+    "grasp": "grasp_site",
+    "tracker_aligned_ee": "ee_site",
+    "tracker": "tracker_site",
+    "mujoco_link6_body": "link6",
+    "urdf_link6": "link_6"
+  },
+  "source": {
+    "i2rt_root": "C:\\Users\\TsingSV\\codes\\yam_umi\\third_party\\HuMI-main\\third_party\\i2rt-main",
+    "arm_xml": "C:\\Users\\TsingSV\\codes\\yam_umi\\third_party\\HuMI-main\\third_party\\i2rt-main\\i2rt\\robot_models\\arm/yam/yam.xml",
+    "gripper_xml": "C:\\Users\\TsingSV\\codes\\yam_umi\\third_party\\HuMI-main\\third_party\\i2rt-main\\i2rt\\robot_models\\gripper/linear_4310/linear_4310.xml",
+    "gripper_mount_config": "C:\\Users\\TsingSV\\codes\\yam_umi\\third_party\\HuMI-main\\third_party\\i2rt-main\\i2rt\\robots\\config\\linear_4310.yml",
+    "arm_urdf": "C:\\Users\\TsingSV\\codes\\yam_umi\\third_party\\HuMI-main\\third_party\\i2rt-main\\i2rt\\robot_models\\arm\\yam\\yam.urdf"
+  },
+  "transforms": {
+    "t_grasp_tracker_config": [
+      [
+        0.0,
+        0.0,
+        1.0,
+        0.0
+      ],
+      [
+        -1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        -1.0,
+        0.0,
+        -0.1495
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "t_grasp_tracker_fk": [
+      [
+        -1.5197919334933697e-17,
+        -1.6739701681945146e-17,
+        1.0,
+        -2.7755575615628914e-17
+      ],
+      [
+        -0.9999999999999999,
+        7.499666716366329e-17,
+        -1.5197006863215687e-17,
+        -4.336808689942018e-19
+      ],
+      [
+        -1.2811183081107283e-16,
+        -1.0,
+        8.521994927442428e-18,
+        -0.14949999999999997
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "t_grasp_ee_tracker_aligned_fk": [
+      [
+        -1.5197919334933697e-17,
+        -1.6739701681945146e-17,
+        1.0,
+        -2.7755575615628914e-17
+      ],
+      [
+        -0.9999999999999999,
+        7.499666716366329e-17,
+        -1.5197006863215687e-17,
+        -4.336808689942018e-19
+      ],
+      [
+        -1.2811183081107283e-16,
+        -1.0,
+        8.521994927442428e-18,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "t_ee_tracker_aligned_tracker_fk": [
+      [
+        1.0,
+        -1.390947873319053e-22,
+        -1.3053092228378383e-21,
+        1.1275702593849246e-17
+      ],
+      [
+        -2.445520692718887e-22,
+        1.0,
+        3.554801560046113e-24,
+        0.1494999999999999
+      ],
+      [
+        3.92837650213286e-22,
+        2.104546415906199e-22,
+        1.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "t_link6_grasp_fk": [
+      [
+        1.0,
+        4.541954424353738e-22,
+        -1.4192671002200873e-17,
+        -2.7755575615628914e-17
+      ],
+      [
+        -4.582764209708149e-22,
+        -0.9999999999999999,
+        2.292759082846719e-22,
+        0.0
+      ],
+      [
+        1.4192464102466753e-17,
+        4.0672755703163575e-23,
+        -1.0,
+        -0.1347
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "tracker_site_in_gripper_body": {
+      "pos": [
+        0.0,
+        0.0,
+        0.014800000000000008
+      ],
+      "quat_wxyz": [
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ]
+    },
+    "grasp_site_in_gripper_body": {
+      "pos": [
+        0.0,
+        0.0,
+        -0.1347
+      ],
+      "quat_wxyz": [
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ]
+    }
+  },
+  "validation": {
+    "nq": 8,
+    "nv": 8,
+    "nu": 0,
+    "grasp_site_id": 1,
+    "tracker_site_id": 3,
+    "tracker_aligned_ee_site_id": 2,
+    "link6_body_id": 6,
+    "t_grasp_tracker_fk": [
+      [
+        -1.5197919334933697e-17,
+        -1.6739701681945146e-17,
+        1.0,
+        -2.7755575615628914e-17
+      ],
+      [
+        -0.9999999999999999,
+        7.499666716366329e-17,
+        -1.5197006863215687e-17,
+        -4.336808689942018e-19
+      ],
+      [
+        -1.2811183081107283e-16,
+        -1.0,
+        8.521994927442428e-18,
+        -0.14949999999999997
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "t_grasp_ee_tracker_aligned_fk": [
+      [
+        -1.5197919334933697e-17,
+        -1.6739701681945146e-17,
+        1.0,
+        -2.7755575615628914e-17
+      ],
+      [
+        -0.9999999999999999,
+        7.499666716366329e-17,
+        -1.5197006863215687e-17,
+        -4.336808689942018e-19
+      ],
+      [
+        -1.2811183081107283e-16,
+        -1.0,
+        8.521994927442428e-18,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "t_ee_tracker_aligned_tracker_fk": [
+      [
+        1.0,
+        -1.390947873319053e-22,
+        -1.3053092228378383e-21,
+        1.1275702593849246e-17
+      ],
+      [
+        -2.445520692718887e-22,
+        1.0,
+        3.554801560046113e-24,
+        0.1494999999999999
+      ],
+      [
+        3.92837650213286e-22,
+        2.104546415906199e-22,
+        1.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "t_link6_grasp_fk": [
+      [
+        1.0,
+        4.541954424353738e-22,
+        -1.4192671002200873e-17,
+        -2.7755575615628914e-17
+      ],
+      [
+        -4.582764209708149e-22,
+        -0.9999999999999999,
+        2.292759082846719e-22,
+        0.0
+      ],
+      [
+        1.4192464102466753e-17,
+        4.0672755703163575e-23,
+        -1.0,
+        -0.1347
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "t_grasp_tracker_matches_config": true
+  },
+  "replay_pose_rule": {
+    "mode": "relative_tracker_delta",
+    "formula": "T_world_grasp_target = T_world_grasp_0 @ (T_grasp_tracker @ inv(T_world_tracker_0) @ T_world_tracker_t @ inv(T_grasp_tracker))"
+  },
+  "notes": [
+    "MuJoCo XML is the complete replay model with gripper geometry.",
+    "URDF is a lightweight kinematic reference with fixed grasp/tracker frames.",
+    "Do not edit generated assets by hand; regenerate them from sim_teleop.model_assets."
+  ]
+}

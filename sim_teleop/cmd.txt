@@ -1,0 +1,10 @@
+python -m sim_teleop.visualize_tracker                      # 自动找最新一集
+python -m sim_teleop.visualize_tracker <episode.json>       # 指定文件
+python -m sim_teleop.visualize_tracker <f> --axis-length 0.08  # 调坐标架大小
+
+
+& ".venv\Scripts\python.exe" -m sim_teleop --control-site ee_site --ik-method mink --joint6-axis positive --orientation-cost 1.0 --resolution 1024
+
+
+
+& ".venv\Scripts\python.exe" -m sim_teleop.record_tracker -o data/tracker_poses
