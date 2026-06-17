@@ -1,0 +1,191 @@
+"""Magnetic encoder sensor process."""
+
+from __future__ import annotations
+
+import argparse
+import multiprocessing as mp
+import time
+
+import numpy as np
+
+from gripper.encoder import (
+    EncoderCalibration,
+    create_instrument,
+    find_serial_port,
+    read_raw,
+)
+
+from .ring_buffer import SharedMemoryRingBuffer
+from .timebase import Timebase, midpoint
+
+
+def encoder_sample_example() -> dict[str, object]:
+    return {
+        "timestamp": np.float64(0.0),
+        "read_start_timestamp": np.float64(0.0),
+        "read_end_timestamp": np.float64(0.0),
+        "raw": np.int32(-1),
+        "normalized": np.float32(np.nan),
+        "valid": np.int8(0),
+    }
+
+
+class EncoderProcess(mp.Process):
+    """Poll the BRT magnetic encoder and publish samples to a ring buffer."""
+
+    def __init__(
+        self,
+        ring_buffer: SharedMemoryRingBuffer,
+        timebase: Timebase,
+        *,
+        port: str | None = None,
+        baudrate: int = 9600,
+        slave_addr: int = 1,
+        frequency: float = 100.0,
+        calibration: EncoderCalibration | None = None,
+        verbose: bool = False,
+    ) -> None:
+        super().__init__()
+        if frequency <= 0:
+            raise ValueError("frequency must be positive")
+        self.ring_buffer = ring_buffer
+        self.timebase = timebase
+        self.port = port
+        self.baudrate = baudrate
+        self.slave_addr = slave_addr
+        self.frequency = float(frequency)
+        self.calibration = calibration or EncoderCalibration.load()
+        self.verbose = verbose
+        self.stop_event = mp.Event()
+        self.ready_event = mp.Event()
+
+    @property
+    def is_ready(self) -> bool:
+        return self.ready_event.is_set()
+
+    def stop(self) -> None:
+        self.stop_event.set()
+
+    def run(self) -> None:
+        port = self.port or find_serial_port()
+        if port is None:
+            print("[ENCODER] ERROR: no serial port found.", flush=True)
+            return
+
+        inst = None
+        dt = 1.0 / self.frequency
+        next_tick = time.perf_counter()
+        try:
+            inst = create_instrument(
+                port,
+                slave_addr=self.slave_addr,
+                baudrate=self.baudrate,
+            )
+            probe = read_raw(inst)
+            if probe is None:
+                print("[ENCODER] ERROR: encoder did not respond.", flush=True)
+                return
+            print(f"[ENCODER] Started on {port}, raw={probe}", flush=True)
+            self.ready_event.set()
+
+            while not self.stop_event.is_set():
+                read_start = self.timebase.now()
+                raw = read_raw(inst)
+                read_end = self.timebase.now()
+                if raw is None:
+                    sample = {
+                        "timestamp": midpoint(read_start, read_end),
+                        "read_start_timestamp": read_start,
+                        "read_end_timestamp": read_end,
+                        "raw": -1,
+                        "normalized": np.nan,
+                        "valid": 0,
+                    }
+                else:
+                    sample = {
+                        "timestamp": midpoint(read_start, read_end),
+                        "read_start_timestamp": read_start,
+                        "read_end_timestamp": read_end,
+                        "raw": int(raw),
+                        "normalized": self.calibration.normalise(int(raw)),
+                        "valid": 1,
+                    }
+                self.ring_buffer.put(sample)
+                if self.verbose and raw is not None:
+                    print(
+                        f"[ENCODER] raw={raw} norm={sample['normalized']:.3f}",
+                        flush=True,
+                    )
+
+                next_tick += dt
+                sleep_s = next_tick - time.perf_counter()
+                if sleep_s > 0:
+                    time.sleep(sleep_s)
+                else:
+                    next_tick = time.perf_counter()
+        finally:
+            if inst is not None:
+                try:
+                    inst.serial.close()
+                except Exception:
+                    pass
+            print("[ENCODER] Stopped.", flush=True)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Smoke test the encoder process.")
+    parser.add_argument("--port", default=None, help="Serial port, e.g. COM6.")
+    parser.add_argument("--baudrate", type=int, default=9600)
+    parser.add_argument("--slave", type=int, default=1)
+    parser.add_argument("--frequency", type=float, default=50.0)
+    parser.add_argument("--duration", type=float, default=5.0)
+    parser.add_argument("--buffer-size", type=int, default=256)
+    args = parser.parse_args()
+
+    timebase = Timebase.create()
+    ring = SharedMemoryRingBuffer(encoder_sample_example(), capacity=args.buffer_size)
+    proc = EncoderProcess(
+        ring,
+        timebase,
+        port=args.port,
+        baudrate=args.baudrate,
+        slave_addr=args.slave,
+        frequency=args.frequency,
+    )
+    proc.start()
+    if not proc.ready_event.wait(timeout=5.0):
+        proc.stop()
+        proc.join(timeout=2.0)
+        raise SystemExit("ERROR: encoder process did not become ready.")
+
+    start = time.time()
+    try:
+        while time.time() - start < args.duration:
+            try:
+                latest = ring.get_latest()
+            except IndexError:
+                time.sleep(0.05)
+                continue
+            print(
+                "t={:.6f} raw={} norm={:.3f} valid={} count={}".format(
+                    float(latest["timestamp"]),
+                    int(latest["raw"]),
+                    float(latest["normalized"]),
+                    int(latest["valid"]),
+                    ring.count,
+                ),
+                flush=True,
+            )
+            time.sleep(0.2)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        proc.stop()
+        proc.join(timeout=3.0)
+        if proc.is_alive():
+            proc.terminate()
+            proc.join(timeout=1.0)
+
+
+if __name__ == "__main__":
+    main()
