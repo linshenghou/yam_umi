@@ -41,7 +41,7 @@ class EncoderProcess(mp.Process):
         port: str | None = None,
         baudrate: int = 9600,
         slave_addr: int = 1,
-        frequency: float = 100.0,
+        frequency: float = 30.0,
         calibration: EncoderCalibration | None = None,
         verbose: bool = False,
     ) -> None:
@@ -137,7 +137,7 @@ def main() -> None:
     parser.add_argument("--port", default=None, help="Serial port, e.g. COM6.")
     parser.add_argument("--baudrate", type=int, default=9600)
     parser.add_argument("--slave", type=int, default=1)
-    parser.add_argument("--frequency", type=float, default=50.0)
+    parser.add_argument("--frequency", type=float, default=30.0)
     parser.add_argument("--duration", type=float, default=5.0)
     parser.add_argument("--buffer-size", type=int, default=256)
     args = parser.parse_args()

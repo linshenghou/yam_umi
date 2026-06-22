@@ -1,0 +1,28 @@
+# Data-collection dependencies for yam_umi (Windows, Python 3.12).
+# Minimal set: Vive Tracker pose + BRT gripper encoder + LAN pose streaming
+# + visualization. MuJoCo / JAX / pyroki / mink (simulation-only) are
+# intentionally excluded — see docs/setup_windows.md.
+#
+# Install into the project venv from the repo root:
+#   & ".venv\Scripts\python.exe" -m pip install -r requirements-data-collection.txt
+
+# --- sensor I/O ---
+openvr==2.12.1401         # Vive Tracker pose (REQUIRES SteamVR installed on the machine)
+pyserial==3.5             # COM-port discovery for the BRT encoder
+minimalmodbus==2.1.1      # BRT encoder Modbus-RTU
+pyzmq==27.1.0             # LAN pose streaming: stream_pose / receive_pose
+
+# --- numerics ---
+numpy==2.4.6
+scipy==1.17.1             # quaternion ops in visualize_tracker
+
+# --- visualization ---
+rerun-sdk==0.33.0         # interactive 3D replay (python -m sim_teleop.visualize_tracker)
+evo==1.36.5               # TUM trajectory export / evaluation (evo_traj tum ... --plot)
+
+# --- optional: Intel RealSense RGB camera (sim_teleop/data_collection/realsense_rgb_check.py) ---
+# Not pinned: not installed on the reference machine, so no known-good version.
+# Install on demand; if you hit numpy-2 incompatibility, pin to recent wheels
+# (pyrealsense2 >= 2.55, opencv-python >= 4.10 both support numpy 2.x).
+pyrealsense2
+opencv-python
