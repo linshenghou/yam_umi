@@ -70,11 +70,12 @@ raw endpoints are saved in `sim_teleop/configs/encoder_mapping.json`:
 ```
 
 Run the calibration by USB serial instead of COM port, because COM numbers can
-change across boots:
+change across boots. For the current gripper convention, first set the encoder
+hardware zero at fully open, then capture fully closed:
 
 ```powershell
-scripts\calibrate_encoders.cmd bind --role left_encoder --usb-serial 5B90108980 --calibrate
-scripts\calibrate_encoders.cmd bind --role right_encoder --usb-serial 5B90108259 --calibrate
+scripts\calibrate_encoders.cmd open-zero --role left_encoder --usb-serial 5B90108980
+scripts\calibrate_encoders.cmd open-zero --role right_encoder --usb-serial 5B90108259
 ```
 
 The pose conversion uses a fixed tracker mount transform. The recorded Vive

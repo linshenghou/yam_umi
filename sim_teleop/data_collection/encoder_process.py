@@ -45,6 +45,7 @@ class EncoderProcess(mp.Process):
         slave_addr: int = 1,
         frequency: float = 30.0,
         calibration: EncoderCalibration | None = None,
+        raw_only: bool = False,
         side: str | None = None,
         verbose: bool = False,
     ) -> None:
@@ -59,6 +60,7 @@ class EncoderProcess(mp.Process):
         self.slave_addr = slave_addr
         self.frequency = float(frequency)
         self.calibration = calibration or EncoderCalibration.load()
+        self.raw_only = raw_only
         # Optional side label ("left"/"right") for log lines; samples are routed
         # to per-side ring buffers/files by the collector, not by this field.
         self.side = side
@@ -88,11 +90,19 @@ class EncoderProcess(mp.Process):
         dt = 1.0 / self.frequency
         next_tick = time.perf_counter()
         try:
-            inst = create_instrument(
-                port,
-                slave_addr=self.slave_addr,
-                baudrate=self.baudrate,
-            )
+            try:
+                inst = create_instrument(
+                    port,
+                    slave_addr=self.slave_addr,
+                    baudrate=self.baudrate,
+                )
+            except Exception as exc:
+                label = f" [{self.side}]" if self.side else ""
+                print(
+                    f"[ENCODER]{label} ERROR: could not open {port}: {exc}",
+                    flush=True,
+                )
+                return
             probe = read_raw(inst)
             if probe is None:
                 print("[ENCODER] ERROR: encoder did not respond.", flush=True)
@@ -124,13 +134,23 @@ class EncoderProcess(mp.Process):
                     }
                 else:
                     consecutive_failures = 0
+                    normalized = (
+                        np.nan
+                        if self.raw_only
+                        else self.calibration.normalise(int(raw))
+                    )
+                    metric = (
+                        np.nan
+                        if self.raw_only
+                        else self.calibration.metric_m(int(raw))
+                    )
                     sample = {
                         "timestamp": midpoint(read_start, read_end),
                         "read_start_timestamp": read_start,
                         "read_end_timestamp": read_end,
                         "raw": int(raw),
-                        "normalized": self.calibration.normalise(int(raw)),
-                        "metric": self.calibration.metric_m(int(raw)),
+                        "normalized": normalized,
+                        "metric": metric,
                         "valid": 1,
                     }
                 self.ring_buffer.put(sample)
@@ -163,6 +183,7 @@ def main() -> None:
     parser.add_argument("--frequency", type=float, default=30.0)
     parser.add_argument("--duration", type=float, default=5.0)
     parser.add_argument("--buffer-size", type=int, default=256)
+    parser.add_argument("--raw-only", action="store_true")
     args = parser.parse_args()
 
     timebase = Timebase.create()
@@ -174,6 +195,7 @@ def main() -> None:
         baudrate=args.baudrate,
         slave_addr=args.slave,
         frequency=args.frequency,
+        raw_only=args.raw_only,
     )
     proc.start()
     if not proc.ready_event.wait(timeout=5.0):

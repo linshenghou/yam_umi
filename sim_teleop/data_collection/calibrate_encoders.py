@@ -12,6 +12,7 @@ from typing import Any
 import serial.tools.list_ports
 
 from gripper.encoder import (
+    EncoderCalibration,
     create_instrument,
     find_port_by_usb_serial,
     read_raw,
@@ -108,6 +109,20 @@ def _read_port(port: str, *, baudrate: int, slave: int) -> int:
         return value
     finally:
         inst.serial.close()
+
+
+def _calibration_from_entry(entry: dict[str, Any]) -> EncoderCalibration:
+    cal_data = entry.get("calibration") or {}
+    stroke_mm = cal_data.get("stroke_mm")
+    if stroke_mm is None and entry.get("gripper_length_m") is not None:
+        stroke_mm = float(entry["gripper_length_m"]) * 1000.0
+    if stroke_mm is None and entry.get("gripper_length") is not None:
+        stroke_mm = float(entry["gripper_length"]) * 1000.0
+    return EncoderCalibration(
+        raw_closed=cal_data.get("raw_closed"),
+        raw_open=cal_data.get("raw_open"),
+        stroke_mm=stroke_mm,
+    )
 
 
 def _role_entry(
@@ -328,6 +343,59 @@ def resolve_ports(config_path: Path) -> list[tuple[str, str]]:
     return resolved
 
 
+def watch_encoder(
+    *,
+    config_path: Path,
+    role: str | None,
+    port: str | None,
+    usb_serial: str | None,
+    baudrate: int,
+    slave: int,
+    duration: float,
+    frequency: float,
+) -> None:
+    entry: dict[str, Any] = {}
+    if role is not None:
+        config = _load_config(config_path)
+        entry = (config.get("roles", {}) or {}).get(role) or {}
+        if not entry:
+            raise SystemExit(f"{role} is not configured in {config_path}")
+        usb_serial = usb_serial or entry.get("usb_serial")
+        if not usb_serial:
+            port = port or entry.get("port")
+        baudrate = int(entry.get("baudrate", config.get("baudrate", baudrate)))
+        slave = int(entry.get("slave", config.get("slave", slave)))
+
+    if port is None and usb_serial is None:
+        raise SystemExit("watch requires --role, --port, or --usb-serial")
+    resolved_port = _port_by_usb_serial(usb_serial) if usb_serial else port
+    if resolved_port is None:
+        raise SystemExit(f"could not resolve encoder port for usb_serial={usb_serial!r}")
+    calibration = _calibration_from_entry(entry)
+    inst = create_instrument(resolved_port, slave_addr=slave, baudrate=baudrate)
+    dt = 1.0 / frequency
+    deadline = time.time() + duration
+    try:
+        print(
+            f"[ENC-CAL] watching role={role or ''} port={resolved_port} "
+            f"usb_serial={usb_serial or ''} {calibration}"
+        )
+        while time.time() < deadline:
+            raw = read_raw(inst)
+            if raw is None:
+                print("[ENC-CAL] raw=None valid=0")
+            else:
+                norm = calibration.normalise(int(raw))
+                metric = calibration.metric_m(int(raw))
+                print(
+                    f"[ENC-CAL] raw={raw} normalized={norm:.4f} "
+                    f"metric_m={metric:.6f} valid=1"
+                )
+            time.sleep(dt)
+    finally:
+        inst.serial.close()
+
+
 def wizard(args: argparse.Namespace) -> None:
     config = _load_config(args.config)
     print("[ENC-CAL] current config:")
@@ -386,6 +454,13 @@ def main() -> None:
     resolve_p = sub.add_parser("resolve", help="Resolve saved roles to current COM ports.")
     resolve_p.add_argument("--plain", action="store_true", help="Print ports only.")
 
+    watch_p = sub.add_parser("watch", help="Stream raw and calibrated readings.")
+    watch_p.add_argument("--role", choices=DEFAULT_ROLES, default=None)
+    watch_p.add_argument("--port", default=None)
+    watch_p.add_argument("--usb-serial", default=None)
+    watch_p.add_argument("--duration", type=float, default=5.0)
+    watch_p.add_argument("--frequency", type=float, default=10.0)
+
     sub.add_parser("wizard", help="Interactive bind/calibration wizard.")
     args = parser.parse_args()
 
@@ -433,6 +508,17 @@ def main() -> None:
         else:
             for role, port in resolved:
                 print(f"{role}={port}")
+    elif args.cmd == "watch":
+        watch_encoder(
+            config_path=args.config,
+            role=args.role,
+            port=args.port,
+            usb_serial=args.usb_serial,
+            baudrate=args.baudrate,
+            slave=args.slave,
+            duration=args.duration,
+            frequency=args.frequency,
+        )
     else:
         raise SystemExit(f"unknown command: {args.cmd}")
 

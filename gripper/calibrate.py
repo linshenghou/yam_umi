@@ -42,6 +42,7 @@ import time
 
 from .encoder import (
     CALIBRATION_FILE,
+    RAW_FULL_SCALE,
     SIDES,
     EncoderCalibration,
     GripperSide,
@@ -111,12 +112,25 @@ def _sample_stable(inst, n: int = 10, dt: float = 0.05) -> int | None:
     return int(statistics.median(vals))
 
 
+def _raw_degrees(raw: int) -> tuple[float, float]:
+    deg = float(raw) * 360.0 / RAW_FULL_SCALE
+    signed_raw = raw if raw <= RAW_FULL_SCALE / 2 else raw - RAW_FULL_SCALE
+    signed_deg = float(signed_raw) * 360.0 / RAW_FULL_SCALE
+    return deg, signed_deg
+
+
 def _monitor(inst, seconds: float | None = None) -> None:
-    """Print raw values until KeyboardInterrupt (or for `seconds`)."""
+    """Print raw values and raw-equivalent degrees until interrupted."""
     t0 = time.time()
     try:
         while seconds is None or time.time() - t0 < seconds:
-            print(f"\rraw = {read_raw(inst)}", end="", flush=True)
+            raw = read_raw(inst)
+            if raw is None:
+                text = "raw=None"
+            else:
+                deg, signed_deg = _raw_degrees(int(raw))
+                text = f"raw={raw:4d} deg={deg:8.3f} signed_deg={signed_deg:8.3f}"
+            print(f"\r{text}    ", end="", flush=True)
             time.sleep(0.1)
     except KeyboardInterrupt:
         pass
@@ -182,8 +196,8 @@ def main() -> None:
                    help="Delete the saved calibration and exit.")
     p.add_argument("--zero", action="store_true",
                    help="Hardware zero-set: current position becomes raw 0 "
-                        "(persistent, stored in the encoder). Move to FULLY "
-                        "CLOSED first; invalidates the saved calibration.")
+                        "(persistent, stored in the encoder). Move to the "
+                        "desired zero position first; invalidates calibration.")
     p.add_argument("--midpoint", action="store_true",
                    help="Hardware midpoint-set (persistent, stored in encoder).")
     p.add_argument("-y", "--yes", action="store_true",
@@ -254,8 +268,7 @@ def main() -> None:
         if args.zero or args.midpoint:
             if args.zero:
                 action = "reset zero (current position → raw 0)"
-                print("\nNOTE: for a gripper, move to FULLY CLOSED first so the")
-                print("      whole stroke stays in a non-wrapping region.")
+                print("\nNOTE: move to the position you want to become raw 0.")
             else:
                 action = "set midpoint"
             print(f"\nWARNING: about to {action}.")
@@ -281,6 +294,9 @@ def main() -> None:
                     break
                 time.sleep(0.1)
             print(f"Read-back: raw = {after}")
+            if args.show:
+                print("Streaming raw degrees (Ctrl-C to quit)...")
+                _monitor(inst)
             return
 
         # ── Show-only mode ─────────────────────────────────────────────────

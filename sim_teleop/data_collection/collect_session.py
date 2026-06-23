@@ -174,6 +174,11 @@ def main() -> None:
     parser.add_argument("--max-cameras", type=int, default=3)
     parser.add_argument("--max-episode-s", type=float, default=180.0)
     parser.add_argument("--encoder-mapping", type=Path, default=DEFAULT_ENCODER_CONFIG_PATH)
+    parser.add_argument(
+        "--encoder-raw-only",
+        action="store_true",
+        help="Record encoder raw values only; normalized/metric are NaN.",
+    )
     parser.add_argument("--realsense-python", type=Path, default=DEFAULT_REALSENSE_PYTHON)
     parser.add_argument("--no-camera", action="store_true")
     args = parser.parse_args()
@@ -197,10 +202,14 @@ def main() -> None:
             stroke_mm = float(entry["gripper_length_m"]) * 1000.0
         if stroke_mm is None and entry.get("gripper_length") is not None:
             stroke_mm = float(entry["gripper_length"]) * 1000.0
-        calibration = EncoderCalibration(
-            raw_closed=cal_data.get("raw_closed"),
-            raw_open=cal_data.get("raw_open"),
-            stroke_mm=stroke_mm,
+        calibration = (
+            EncoderCalibration()
+            if args.encoder_raw_only
+            else EncoderCalibration(
+                raw_closed=cal_data.get("raw_closed"),
+                raw_open=cal_data.get("raw_open"),
+                stroke_mm=stroke_mm,
+            )
         )
         ring = SharedMemoryRingBuffer(encoder_sample_example(), cap_enc)
         encoder_rings[role] = ring
@@ -213,9 +222,11 @@ def main() -> None:
             slave_addr=int(entry.get("slave", encoder_config.get("slave", 1))),
             frequency=args.encoder_frequency,
             calibration=calibration,
+            raw_only=args.encoder_raw_only,
             side=_role_label(role),
         )
-        print(f"[SESSION] encoder {role}: port={port} {calibration}", flush=True)
+        cal_text = "RAW_ONLY" if args.encoder_raw_only else str(calibration)
+        print(f"[SESSION] encoder {role}: port={port} {cal_text}", flush=True)
 
     tracker_ring = SharedMemoryRingBuffer(tracker_sample_example(), cap_trk)
     tracker = TrackerProcess(tracker_ring, timebase, frequency=args.tracker_frequency)
@@ -227,6 +238,7 @@ def main() -> None:
         "timebase": {"wall0": timebase.wall0, "perf0": timebase.perf0},
         "encoder_mapping": encoder_config,
         "encoder_resolved_ports": {role: port for role, port in resolved_ports},
+        "encoder_raw_only": args.encoder_raw_only,
         "encoder_frequency": args.encoder_frequency,
         "tracker_frequency": args.tracker_frequency,
         "camera": None
@@ -356,15 +368,20 @@ def main() -> None:
         if camera is not None:
             camera.quit()
         for proc in encoders.values():
-            proc.stop()
-        tracker.stop()
+            if proc.pid is not None:
+                proc.stop()
+        if tracker.pid is not None:
+            tracker.stop()
         for proc in encoders.values():
+            if proc.pid is None:
+                continue
             proc.join(timeout=3.0)
             if proc.is_alive():
                 proc.terminate()
-        tracker.join(timeout=3.0)
-        if tracker.is_alive():
-            tracker.terminate()
+        if tracker.pid is not None:
+            tracker.join(timeout=3.0)
+            if tracker.is_alive():
+                tracker.terminate()
         if camera is not None:
             try:
                 camera.proc.wait(timeout=10.0)
