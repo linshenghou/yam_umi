@@ -1,0 +1,20 @@
+# Run these commands on the remote PC's interactive desktop PowerShell.
+# Do not run collect_session over SSH: OpenVR/SteamVR cannot initialize
+# reliably from the sshd service session.
+
+cd C:\Users\pokeumi\Desktop\yam_umi
+
+# 1) Check Vive tracker / OpenVR readiness.
+.venv\Scripts\python.exe -m sim_teleop.data_collection.tracker_process --duration 5 --frequency 30 --serial-prefix ""
+
+# 2) Start hotkey recording.
+# Keys inside the collector:
+#   r = start recording an episode
+#   s = stop/save the active episode
+#   q = quit
+.venv\Scripts\python.exe -m sim_teleop.data_collection.collect_session -o data\sessions
+
+# 3) Convert one recorded session to LeRobot v2.1.
+# Replace SESSION_NAME with the folder created under data\sessions.
+.venv\Scripts\python.exe -m sim_teleop.data_collection.convert_to_lerobot data\sessions\SESSION_NAME -o data\lerobot_yam_umi --task mapo_tofu --resize 320x240
+

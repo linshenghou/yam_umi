@@ -56,6 +56,7 @@ USB_SERIAL_RE = re.compile(r"(?:SER|SERIAL)=([^ ]+)", re.IGNORECASE)
 REG_SINGLE_TURN = 0x0000   # single-turn value (≤16 bit) — gripper position
 REG_RESET_ZERO = 0x0008    # write 1 → current position = raw 0 (persistent)
 REG_SET_MIDPOINT = 0x000E  # write 1 → current position = midpoint (persistent)
+RAW_FULL_SCALE = 1024      # BRT single-turn register wraps 1023 -> 0
 
 
 def usb_serial_from_port_info(port_info) -> str:
@@ -267,8 +268,25 @@ class EncoderCalibration:
         """Map raw value to [0, 1]. Returns 0.0 if not calibrated."""
         if not self.is_ready:
             return 0.0
-        span = self.raw_open - self.raw_closed  # type: ignore[operator]
-        return float(np.clip((raw - self.raw_closed) / span, 0.0, 1.0))
+        raw_value = float(raw)
+        raw_open = float(self.raw_open)  # type: ignore[arg-type]
+        raw_closed = float(self.raw_closed)  # type: ignore[arg-type]
+
+        # If hardware zero is set at an endpoint, small motion/noise just past
+        # raw 0 can appear near RAW_FULL_SCALE (e.g. open=0, closed=773,
+        # current=996). Treat those high values as negative values near open
+        # before applying the linear closed->open map.
+        if raw_open <= raw_closed:
+            wrap_threshold = (raw_closed + RAW_FULL_SCALE) / 2.0
+            if raw_value > wrap_threshold:
+                raw_value -= RAW_FULL_SCALE
+        elif raw_closed <= raw_open:
+            wrap_threshold = raw_closed / 2.0
+            if raw_value < wrap_threshold:
+                raw_value += RAW_FULL_SCALE
+
+        span = raw_open - raw_closed
+        return float(np.clip((raw_value - raw_closed) / span, 0.0, 1.0))
 
     def metric_m(self, raw: int) -> float:
         """Map raw value to a metric jaw opening in metres.
