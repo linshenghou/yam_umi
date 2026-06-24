@@ -1,4 +1,4 @@
-"""Hot-start sensors once, then record episodes with r/s/q hotkeys."""
+"""Hot-start sensors once, then record episodes with c/q hotkeys."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import threading
 import time
 
 import numpy as np
@@ -55,7 +56,17 @@ def _slice_by_window(
     return {key: value[mask] for key, value in batch.items()}, truncated
 
 
+def _flush_pending_keys() -> None:
+    try:
+        import msvcrt
+    except ImportError:
+        return
+    while msvcrt.kbhit():
+        msvcrt.getwch()
+
+
 def _read_key(prompt: str, valid: set[str]) -> str:
+    _flush_pending_keys()
     print(prompt, flush=True)
     try:
         import msvcrt
@@ -70,6 +81,30 @@ def _read_key(prompt: str, valid: set[str]) -> str:
             value = input("> ").strip().lower()
             if value in valid:
                 return value
+
+
+def _play_prompt_sound(kind: str, *, enabled: bool = True) -> None:
+    if not enabled:
+        return
+
+    patterns = {
+        "start": [(1200, 120), (1500, 120)],
+        "stop": [(520, 260)],
+        "error": [(420, 120), (420, 120), (420, 120)],
+    }
+    pattern = patterns[kind]
+
+    def worker() -> None:
+        try:
+            import winsound
+
+            for freq, duration_ms in pattern:
+                winsound.Beep(freq, duration_ms)
+                time.sleep(0.04)
+        except Exception:
+            print("\a", end="", flush=True)
+
+    threading.Thread(target=worker, daemon=True).start()
 
 
 def _role_label(role: str) -> str:
@@ -181,7 +216,13 @@ def main() -> None:
     )
     parser.add_argument("--realsense-python", type=Path, default=DEFAULT_REALSENSE_PYTHON)
     parser.add_argument("--no-camera", action="store_true")
+    parser.add_argument(
+        "--no-cue-sound",
+        action="store_true",
+        help="Disable start/stop system prompt sounds.",
+    )
     args = parser.parse_args()
+    cue_sound = not args.no_cue_sound
 
     session_dir = _session_dir(args.output_dir)
     timebase = Timebase.create()
@@ -280,12 +321,12 @@ def main() -> None:
         tracker.start()
         if not tracker.ready_event.wait(timeout=8.0):
             raise RuntimeError("tracker process did not become ready")
-        print("[SESSION] all sensors hot. r=start, s=stop, q=quit", flush=True)
+        print("[SESSION] all sensors hot. c=开始录制, q=退出/结束录制", flush=True)
 
         while True:
             cmd = _read_key(
-                f"\n[SESSION] episode {episode_index}: press r to START, q to quit",
-                {"r", "q"},
+                f"\n[SESSION] episode {episode_index}: 按 c 开始录制, 按 q 退出",
+                {"c", "q"},
             )
             if cmd == "q":
                 break
@@ -293,6 +334,8 @@ def main() -> None:
             ep_dir = session_dir / f"episode_{episode_index:03d}"
             cameras_dir = ep_dir / "cameras"
             t_start = timebase.now()
+            _play_prompt_sound("start", enabled=cue_sound)
+            print("[SESSION] 开始录制", flush=True)
             enc_count_start = {role: ring.count for role, ring in encoder_rings.items()}
             trk_count_start = tracker_ring.count
 
@@ -301,11 +344,13 @@ def main() -> None:
             ):
                 print("[SESSION] WARNING: camera did not confirm START.", flush=True)
 
-            stop_cmd = _read_key(
-                "[SESSION] recording... press s to STOP/save, q to STOP/save and quit",
-                {"s", "q"},
+            _read_key(
+                "[SESSION] recording... 按 q 结束录制并保存",
+                {"q"},
             )
             t_stop = timebase.now()
+            _play_prompt_sound("stop", enabled=cue_sound)
+            print("[SESSION] 结束录制，正在保存...", flush=True)
 
             cam_frames = None
             if camera is not None:
@@ -360,8 +405,6 @@ def main() -> None:
                 flush=True,
             )
             episode_index += 1
-            if stop_cmd == "q":
-                break
     except KeyboardInterrupt:
         print("\n[SESSION] interrupted.", flush=True)
     finally:
