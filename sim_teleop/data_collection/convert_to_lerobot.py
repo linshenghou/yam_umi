@@ -26,6 +26,7 @@ from pathlib import Path
 import shutil
 from typing import Any
 
+import av
 import cv2
 import numpy as np
 import pyarrow as pa
@@ -346,15 +347,13 @@ def _write_aligned_video(
     src_info = _video_info(src_path)
     width = resize[0] if resize else src_info["width"]
     height = resize[1] if resize else src_info["height"]
-    writer = cv2.VideoWriter(
-        str(out_path),
-        cv2.VideoWriter_fourcc(*"mp4v"),
-        float(fps),
-        (int(width), int(height)),
-    )
-    if not writer.isOpened():
-        cap.release()
-        raise RuntimeError(f"Cannot open video writer: {out_path}")
+
+    container = av.open(str(out_path), mode="w")
+    stream = container.add_stream("h264", rate=int(fps))
+    stream.width = int(width)
+    stream.height = int(height)
+    stream.pix_fmt = "yuv420p"
+    stream.options = {"crf": "18", "preset": "veryfast", "profile": "high"}
 
     indices = _nearest_indices(src_ts, target_ts)
     last_idx = -1
@@ -371,9 +370,15 @@ def _write_aligned_video(
             out_frame = frame
             if resize is not None:
                 out_frame = cv2.resize(frame, resize, interpolation=cv2.INTER_AREA)
-            writer.write(out_frame)
+            av_frame = av.VideoFrame.from_ndarray(
+                np.ascontiguousarray(out_frame), format="bgr24"
+            )
+            for packet in stream.encode(av_frame):
+                container.mux(packet)
+        for packet in stream.encode():
+            container.mux(packet)
     finally:
-        writer.release()
+        container.close()
         cap.release()
 
     return {
@@ -381,7 +386,7 @@ def _write_aligned_video(
         "height": int(height),
         "fps": float(fps),
         "frames": int(len(target_ts)),
-        "codec": "mp4v",
+        "codec": "h264",
     }
 
 

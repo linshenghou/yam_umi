@@ -21,6 +21,45 @@ METADATA_FIELDS = {
 DEFAULT_CAMERA_CONFIG_PATH = (
     Path(__file__).resolve().parents[1] / "configs" / "realsense_cameras.json"
 )
+CAMERA_METADATA_README = """# RealSense camera metadata guide
+
+This directory contains one camera episode recorded by `realsense_rgb_record`.
+
+## Most important files
+
+- `metadata.json`: episode-level camera metadata and camera list.
+- `cam*/color.mp4`: RGB video for each RealSense camera.
+- `cam*/color_timestamps.npy`: primary timestamp for each video frame. Use this
+  for sync with `lowdim/*.npz` because it is on the shared host timebase.
+- `cam*/sample.png`: preview image from the last frame, for quick inspection only.
+
+## Timestamp files inside each `cam*` folder
+
+- `color_timestamps.npy`: host midpoint timestamp in seconds. This is the
+  recommended timeline for downstream alignment with tracker/encoder data.
+- `device_timestamps.npy`: RealSense device timestamp from `frame.get_timestamp()`.
+  Useful for diagnostics, but it is not the shared host clock.
+- `timestamp_domain.npy`: RealSense timestamp-domain label for each frame.
+- `frame_counter.npy`: raw RealSense frame counter metadata when available.
+- `receive_durations_ms.npy`: host-side `wait_for_frames` duration in ms. Use it
+  to diagnose camera stalls; do not use it as frame time.
+- `metadata_*.npy`: raw RealSense SDK metadata fields. These are optional
+  diagnostics and may contain NaN when the camera/driver does not expose them.
+
+## Practical downstream rule
+
+For most conversion or synchronization code:
+
+1. Read `camX/color.mp4`.
+2. Load `camX/color_timestamps.npy`.
+3. Treat `color_timestamps[i]` as the timestamp for video frame `i`.
+4. Interpolate `lowdim/tracker.npz` and `lowdim/encoder_*.npz` onto those
+   camera timestamps.
+
+`wall0` and `perf0` in `metadata.json` are the anchors used to build the shared
+host timebase. Downstream code usually does not need them once timestamps are
+already saved.
+"""
 
 
 def _import_realsense():
@@ -320,6 +359,7 @@ class _EpisodeWriter:
         total_frames = sum(len(ts) for ts in self.host_timestamps)
         metadata = {
             "schema": "realsense_rgb_raw_v2",
+            "metadata_readme": "README_metadata.md",
             "video_codec": "h264",
             "video_codec_options": {
                 "crf": "18",
@@ -351,16 +391,37 @@ class _EpisodeWriter:
                 },
             },
             "cameras": self.camera_meta,
+            "field_descriptions": {
+                "schema": "Metadata schema version for this camera episode.",
+                "video_codec": "Codec used for the recorded MP4 files.",
+                "video_codec_options": "Encoder settings used when writing the video.",
+                "width": "Recorded color frame width in pixels.",
+                "height": "Recorded color frame height in pixels.",
+                "fps": "Nominal recording frame rate.",
+                "duration": "Episode duration in seconds, if known.",
+                "wall0": "Shared host-time anchor from the parent process.",
+                "perf0": "Monotonic clock anchor used with wall0 to reconstruct host time.",
+                "camera_config": "Path to the camera role mapping config, if provided.",
+                "camera_roles": "Resolved serial number to role mapping.",
+                "camera_config_data": "Raw camera config JSON used for this episode.",
+                "timestamp_files": "Human-readable meanings of the saved timing arrays.",
+                "cameras": "Per-camera metadata entries for each cam* folder.",
+            },
         }
         (self.output_dir / "metadata.json").write_text(
             json.dumps(metadata, indent=2), encoding="utf-8"
         )
+        _write_metadata_readme(self.output_dir / "README_metadata.md", CAMERA_METADATA_README)
         return total_frames
 
 
 def _write_marker(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _write_metadata_readme(path: Path, text: str) -> None:
+    path.write_text(text.strip() + "\n", encoding="utf-8")
 
 
 def _serve(rig: _CameraRig, ready_file: Path | None) -> None:

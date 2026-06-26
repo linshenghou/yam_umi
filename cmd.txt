@@ -3,27 +3,10 @@
 # reliably from the sshd service session.
 
 cd C:\Users\pokeumi\Desktop\yam_umi
-
-# 1) Check Vive tracker / OpenVR readiness.
-.venv\Scripts\python.exe -m sim_teleop.data_collection.tracker_process --duration 5 --frequency 30 --serial-prefix ""
-
-# 2) Start hotkey recording.
-# Keys inside the collector:
 #   r = start recording an episode
 #   s = stop/save the active episode
 #   q = quit
 .venv\Scripts\python.exe -m sim_teleop.data_collection.collect_session -o data\sessions --encoder-raw-only
-
-# 3) Convert one recorded session to LeRobot v2.1.
-# Replace SESSION_NAME with the folder created under data\sessions.
-.venv\Scripts\python.exe -m sim_teleop.data_collection.convert_to_lerobot data\sessions\SESSION_NAME -o data\lerobot_yam_umi --task mapo_tofu --resize 320x240
-
-scripts\calibrate_encoders.cmd open-zero --role left_encoder --usb-serial 5B90108980
-
-scripts\calibrate_encoders.cmd open-zero --role right_encoder --usb-serial 5B90108259
-
-scripts\calibrate_encoders.cmd watch --role left_encoder --duration 10 --frequency 5
-scripts\calibrate_encoders.cmd watch --role right_encoder --duration 10 --frequency 5
 
 # Optional: only reset encoder zero at current position, then stream raw degrees.
 # Ctrl-C to stop streaming.

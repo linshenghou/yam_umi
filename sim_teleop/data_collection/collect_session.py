@@ -23,6 +23,40 @@ from .tracker_process import TrackerProcess, tracker_sample_example
 
 
 DEFAULT_REALSENSE_PYTHON = Path(sys.executable)
+SESSION_METADATA_README = """# Session metadata guide
+
+This session directory contains one hot-start recording run driven by
+`collect_session`.
+
+## Layout
+
+- `metadata.json`: session-level summary, sensor config, and episode list.
+- `episode_*/metadata.json`: one episode summary per recording.
+- `episode_*/cameras/README_metadata.md`: camera-side file guide.
+- `episode_*/lowdim/*.npz`: tracker and encoder samples sliced by episode time.
+
+## Important session fields
+
+- `timebase.wall0` / `timebase.perf0`: shared host-time anchor used by every
+  process in this session.
+- `encoder_mapping`: resolved encoder role/port/calibration config.
+- `encoder_resolved_ports`: role to COM-port mapping actually used at runtime.
+- `encoder_raw_only`: true means encoder `normalized` and `metric` are NaN.
+- `episodes`: list of saved episodes. Each entry contains `t_start`, `t_stop`,
+  `duration`, camera frame count, and lowdim sample counts.
+
+## How to read an episode
+
+1. Open `episode_NNN/metadata.json` for the episode window.
+2. Open `episode_NNN/cameras/metadata.json` for camera timing details.
+3. Use `episode_NNN/cameras/cam*/color_timestamps.npy` as the primary video
+   timeline.
+4. Use `episode_NNN/lowdim/tracker.npz` and `encoder_*.npz` to align lowdim
+   data onto the camera timestamps.
+
+The `color_timestamps.npy` arrays and the lowdim `timestamp` arrays share the
+same host timebase, so they can be aligned directly.
+"""
 
 
 def _session_dir(root: Path) -> Path:
@@ -34,6 +68,10 @@ def _session_dir(root: Path) -> Path:
 def _save_npz(path: Path, data: dict[str, np.ndarray]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(path, **data)
+
+
+def _write_metadata_readme(path: Path, text: str) -> None:
+    path.write_text(text.strip() + "\n", encoding="utf-8")
 
 
 def _slice_by_window(
@@ -225,6 +263,7 @@ def main() -> None:
     cue_sound = not args.no_cue_sound
 
     session_dir = _session_dir(args.output_dir)
+    _write_metadata_readme(session_dir / "README_metadata.md", SESSION_METADATA_README)
     timebase = Timebase.create()
     print(f"[SESSION] {session_dir}", flush=True)
 
@@ -276,6 +315,7 @@ def main() -> None:
     metadata = {
         "schema": "hotkey_session_v1",
         "session_dir": str(session_dir),
+        "metadata_readme": "README_metadata.md",
         "timebase": {"wall0": timebase.wall0, "perf0": timebase.perf0},
         "encoder_mapping": encoder_config,
         "encoder_resolved_ports": {role: port for role, port in resolved_ports},
@@ -291,6 +331,17 @@ def main() -> None:
             "max_cameras": args.max_cameras,
         },
         "episodes": [],
+        "field_descriptions": {
+            "session_dir": "Absolute session root path.",
+            "timebase": "Shared host-time anchor used by cameras, tracker, and encoders.",
+            "encoder_mapping": "Loaded encoder role/port/calibration config.",
+            "encoder_resolved_ports": "Runtime-resolved role to serial-port mapping.",
+            "encoder_raw_only": "True when only raw encoder values were recorded.",
+            "encoder_frequency": "Encoder polling rate in Hz.",
+            "tracker_frequency": "Tracker polling rate in Hz.",
+            "camera": "Camera configuration used for this session, or null.",
+            "episodes": "Episode summaries appended as each recording is saved.",
+        },
     }
 
     try:
@@ -368,11 +419,21 @@ def main() -> None:
             lowdim_dir = ep_dir / "lowdim"
             ep_meta = {
                 "episode": episode_index,
+                "metadata_readme": "cameras/README_metadata.md",
                 "t_start": t_start,
                 "t_stop": t_stop,
                 "duration": t_stop - t_start,
                 "camera_frames": cam_frames,
                 "encoder_samples": {},
+                "field_descriptions": {
+                    "episode": "Zero-based episode index.",
+                    "t_start": "Shared host-time timestamp when recording started.",
+                    "t_stop": "Shared host-time timestamp when recording stopped.",
+                    "duration": "Episode duration in seconds.",
+                    "camera_frames": "Number of frames written by the camera subprocess.",
+                    "encoder_samples": "Per-encoder sample counts saved for this episode.",
+                    "tracker_samples": "Tracker sample count saved for this episode.",
+                },
             }
             for role, ring in encoder_rings.items():
                 data, truncated = _slice_by_window(
