@@ -1,20 +1,26 @@
 # yam_umi
 
-YAM arm + gripper teleoperation on Windows: read a Vive Tracker and a BRT
-encoder, solve arm IK, and drive the YAM arm and LINEAR_4310 gripper inside a
-MuJoCo simulation. Also includes a standalone gripper calibration tool that
-needs nothing but a USB-serial encoder.
+Bimanual manipulation **data collection** on Windows. Record synchronized
+RealSense RGB video, BRT gripper encoders, and Vive Trackers into raw
+time-aligned episodes, then convert them to a LeRobot v2.1 dataset for
+imitation learning. The same sensor stack also drives live YAM arm + gripper
+teleoperation inside MuJoCo, plus a standalone gripper-encoder calibration
+tool.
+
+Typical flow: `collect_session` (hotkey recorder) → raw episode tree →
+`convert_to_lerobot` → trainable dataset.
 
 ## Repository layout
 
 ```
-sim_teleop/   Live teleoperation: Vive Tracker → IK (J-PARSE / mink) → YAM arm + gripper in MuJoCo
-gripper/      Standalone BRT Modbus-RTU encoder reader + interactive calibration (no mujoco/openvr needed)
-scripts/      One-off helpers: render the YAM URDF / MuJoCo XML to PNGs
+sim_teleop/data_collection/   Data collection core: hotkey recorder, per-sensor processes, LeRobot conversion
+sim_teleop/                   Live teleoperation: Vive Tracker → IK (J-PARSE / mink) → YAM arm + gripper in MuJoCo
+gripper/                      Standalone BRT Modbus-RTU encoder reader + interactive calibration (no mujoco/openvr needed)
+scripts/                      Collection/calibration launchers + remote hardware-check helpers (PowerShell)
 ```
 
-`third_party/` (vendored HuMI / i2rt / pyroki source), `data/` (tracker
-recordings), and the Python `.venv/` are **git-ignored** — they are local-only
+`third_party/` (vendored HuMI / i2rt / pyroki source), `data/` (recorded
+sessions), and the Python `.venv/` are **git-ignored** — they are local-only
 dependencies and data, not part of this repo.
 
 ## Environment
@@ -33,6 +39,51 @@ Key dependencies (must be installed in that venv): `openvr`, `mujoco`, `numpy`,
 for the current layout.
 
 ## Quick start
+
+### Record a raw session (cameras + encoders + trackers)
+
+`collect_session` hot-starts every sensor once (RealSense cameras, BRT gripper
+encoders, Vive Trackers), then records many episodes interactively. Each
+episode writes H.264 video to `episode_NNN/cameras/` and slices the
+encoder/tracker streams by the episode time window into `episode_NNN/lowdim/`.
+
+```powershell
+& ".\.venv\Scripts\python.exe" -m sim_teleop.data_collection.collect_session -o data/sessions
+```
+
+Encoder-raw-only mode (record raw counts now, calibrate the open/closed
+endpoints later — `normalized`/`metric` are saved as NaN):
+
+```powershell
+& ".\.venv\Scripts\python.exe" -m sim_teleop.data_collection.collect_session `
+  -o data\pokeumi_202606241148 --encoder-raw-only
+```
+
+Hotkeys (typed in the console running the collector; start/stop are also
+beep-cued):
+
+```text
+c   start a new episode
+q   stop + save the episode (during recording), or quit (at the episode menu)
+```
+
+Recorded layout (a `README_metadata.md` field guide is auto-written next to
+each `metadata.json`):
+
+```text
+data/sessions/session_YYYYmmdd_HHMMSS/
+  metadata.json                 session: schema, timebase, sensor config, episodes[]
+  episode_NNN/
+    metadata.json               episode: t_start/t_stop/duration/counts
+    cameras/                    cam*/color.mp4 + per-frame timestamp .npy + metadata.json
+    lowdim/                     encoder_left.npz  encoder_right.npz  tracker.npz
+```
+
+All streams share one host timebase, so `lowdim/*.npz` aligns directly onto
+`cameras/cam*/color_timestamps.npy`. For the full process architecture
+(one `mp.Process` per sensor device, always-on ring buffer + windowed slice),
+CLI options, `.npz` column schemas, and camera metadata details, see
+[sim_teleop/README.md](sim_teleop/README.md#raw-sensor-data-collection-cameras--encoders--trackers).
 
 ### Convert a raw session to LeRobot v2.1
 
