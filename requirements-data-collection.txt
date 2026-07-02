@@ -21,6 +21,13 @@ pyarrow==24.0.0           # LeRobot v2.1 parquet export
 rerun-sdk==0.33.0         # interactive 3D replay (python -m sim_teleop.visualize_tracker)
 evo==1.36.5               # TUM trajectory export / evaluation (evo_traj tum ... --plot)
 
+# --- optional: hand-eye calibration + visualization (dev tools) ---
+# calibrate_handeye_vive needs openvr + pyrealsense2 + opencv + scipy (all above).
+# The two viz tools (visualize_handeye, visualize_urdf_camera) need rerun-sdk +
+# scipy (above); visualize_urdf_camera additionally loads STL meshes via trimesh.
+# All imports are lazy, so the recording pipeline runs without these.
+trimesh                   # STL mesh loading for sim_teleop.visualize_urdf_camera
+
 # --- optional: Intel RealSense RGB camera (sim_teleop/data_collection/realsense_rgb_check.py) ---
 # Not pinned: not installed on the reference machine, so no known-good version.
 # Install on demand; if you hit numpy-2 incompatibility, pin to recent wheels
