@@ -1,17 +1,18 @@
 {
   "schema": "camera_mounts_v1",
-  "_note": "Rigid mount transforms T_tracker_cam per camera role. Best-guess starting values derived from a CAD point-to-point measure + a verbal 35-deg Y rotation — VERIFY frustum placement in the Rerun 3D view and iterate. translation_m = camera optical center position in the tracker frame; rotation_wxyz = T_tracker_cam orientation (w,x,y,z). parent_tracker_role=null means the camera is standalone (not placed in 3D). Intrinsics live in realsense_cameras.json (camera property, not rig geometry).",
+  "_note": "Rigid mount transforms T_tracker_cam per camera role, MEASURED via Vive+checkerboard eye-in-hand calibration (sim_teleop.calibrate_handeye_vive). translation_m = camera optical center position in the tracker frame; rotation_wxyz = T_tracker_cam orientation (w,x,y,z). parent_tracker_role=null means the camera is standalone (not placed in 3D). Intrinsics live in realsense_cameras.json (camera property, not rig geometry).",
   "cameras": {
     "left_cam": {
       "parent_tracker_role": "left_eef",
-      "translation_m": [0.00059, 0.07217, 0.07816],
-      "rotation_wxyz": [0.95372, 0.0, 0.30071, 0.0]
+      "translation_m": [-0.00012, -0.05917, -0.07037],
+      "rotation_wxyz": [0.8485, 0.52914, 0.00245, -0.0075],
+      "_note": "Measured (hand-eye). residual translation std ~[7,3,5]mm, rotation spread ~2.7deg; agrees closely with right_cam (same bracket), so trustworthy. Re-calibrate for a tighter fit if needed."
     },
     "right_cam": {
       "parent_tracker_role": "right_eef",
-      "translation_m": [0.00059, 0.07217, 0.07816],
-      "rotation_wxyz": [0.95372, 0.0, 0.30071, 0.0],
-      "_note": "ASSUMED identical to left_cam mount (same bracket geometry). Verify/correct for the right arm in the viewer."
+      "translation_m": [-0.00566, -0.05829, -0.06522],
+      "rotation_wxyz": [0.84584, 0.53334, -0.00325, -0.00893],
+      "_note": "Measured (hand-eye). residual translation std ~[2,2,3]mm, rotation spread ~0.9deg."
     },
     "egocam": {
       "parent_tracker_role": null
